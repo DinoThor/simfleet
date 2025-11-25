@@ -74,6 +74,7 @@ class MovableMixin:
         self.durations.append(duration)
         behav = MovingBehaviour(period=1)
         self.add_behaviour(behav)
+        return behav
 
 
     async def request_path(self, origin, destination):
