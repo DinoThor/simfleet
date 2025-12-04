@@ -98,6 +98,14 @@ class EmergencyStrategyBehaviour(StrategyBehaviour):
             )
             self.agent.requested = True
 
+            self.agent.events_store.emit(
+                event_type="emergency_call",
+                details={
+                    "location": self.get("current_pos")
+                }
+            )
+
+
         else:
             logger.warning(
                 "Agent[{}]: The agent has no fleet managers.".format(

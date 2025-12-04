@@ -1,5 +1,7 @@
 import asyncio
 import json
+
+import aiohttp
 from random import choices
 from string import ascii_lowercase, digits
 
@@ -18,7 +20,7 @@ from simfleet.communications.protocol import (
 from simfleet.utils.messageconstants import (
     REQUEST_CALCULATE_POSITION,
     ACCEPT_PATROL,
-    INFORM_BACK_TO_ROUTE
+    INFORM_BACK_TO_ROUTE, INFORM_BACK_IN_BASE
 )
 
 class PositionResponseQueue(OneShotBehaviour):
@@ -100,6 +102,15 @@ class PatrolCoordinatorBehaviour(FleetManagerStrategyBehaviour):
                         )
 
                         if closest_patrol:
+                            self.agent.events_store.emit(
+                                event_type="patrol_assigned",
+                                details={
+                                    "patrol": closest_patrol.sender,
+                                    "emergency": msg.sender,
+                                    "distance": json.loads(closest_patrol.body)["result"]
+                                }
+                            )
+
                             fwd_msg = Message()
                             fwd_msg.sender = msg.sender
                             fwd_msg.to = closest_patrol.sender
@@ -142,6 +153,21 @@ class PatrolCoordinatorBehaviour(FleetManagerStrategyBehaviour):
                                 busy = self.agent.get("busy_patrol_list") or []
                                 busy.remove(patrol_id)
                                 self.agent.set("busy_patrol_list", busy)
+
+                        elif content.get("status") == INFORM_BACK_IN_BASE:
+                            finished = self.agent.get("finished_patrols") or []
+                            finished.append(str(msg.sender))
+                            finished = list(set(finished))
+                            self.agent.set("finished_patrols", finished)
+
+                            if len(finished) == len(self.get_transport_agents()):
+                                async def stop():
+                                    async with aiohttp.ClientSession() as session:
+                                        async with session.get("http://localhost:9000/stop"):
+                                            pass
+
+                                asyncio.create_task(stop())
+
 
         except asyncio.CancelledError:
             logger.debug("Cancelling async tasks...")

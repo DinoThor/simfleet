@@ -79,23 +79,35 @@ class PoliceMovingToNextPointState(PoliceStrategyBehaviour):
         self.agent.patrol_arrived_to_point_event.clear()
         self.agent.watch_value("arrived_to_point", self.agent.patrol_arrived_to_point_callback)
 
-        async def wait_watcher(name, event):
-            await event.wait()
-            return name
+        # async def wait_watcher(name, event):
+        #     await event.wait()
+        #     return name
 
-        watchers = [
-            asyncio.create_task(
-                wait_watcher("arrived", self.agent.patrol_arrived_to_point_event)
-            ),  # Arrived at point
-            asyncio.create_task(
-                wait_watcher("emergency", self.agent.patrol_requested_event)
-            )  # Emergency call
-        ]
+        # watchers = [
+        #     asyncio.create_task(
+        #         wait_watcher("arrived", self.agent.patrol_arrived_to_point_event)
+        #     ),  # Arrived at point
+        #     asyncio.create_task(
+        #         wait_watcher("emergency", self.agent.patrol_requested_event)
+        #     )  # Emergency call
+        # ]
 
-        done, pending = await asyncio.wait(watchers, return_when=asyncio.FIRST_COMPLETED)
-        first = done.pop()
+        while not (
+            self.agent.patrol_arrived_to_point_event.is_set()
+            or self.agent.patrol_requested_event.is_set()
+        ):
+            self.agent.events_store.emit(
+                event_type="patrol_moving",
+                details={
+                    "location": self.agent.get("current_pos")
+                }
+            )
+            await asyncio.sleep(0.5)
 
-        if first.result() == "arrived":
+        # done, pending = await asyncio.wait(watchers, return_when=asyncio.FIRST_COMPLETED)
+        # first = done.pop()
+
+        if self.agent.patrol_arrived_to_point_event.is_set():
             return self.set_next_state(PoliceState.ARRIVED_POINT.value)
         else:
             return self.set_next_state(PoliceState.EMERGENCY_CALL.value)
@@ -112,10 +124,10 @@ class PoliceArrivedAtPointState(PoliceStrategyBehaviour):
             return self.set_next_state(PoliceState.BACK_INTO_BASE.value)
         if self.agent.emergency_id and self.agent.emergency_coors:
             return self.set_next_state(PoliceState.ATTEND_EMGY.value)
-        elif self.agent.patrol_requested_event.is_set():
+        if self.agent.patrol_requested_event.is_set():
             return self.set_next_state(PoliceState.EMERGENCY_CALL.value)
-        else:
-            return self.set_next_state(PoliceState.NEXT_POINT.value)
+
+        return self.set_next_state(PoliceState.NEXT_POINT.value)
 
 
 class PoliceEmergencyCallState(PoliceStrategyBehaviour):
@@ -144,17 +156,20 @@ class PoliceAttendEmergencyState(PoliceStrategyBehaviour):
         if msg:
             protocol = msg.get_metadata("protocol")
             performative = msg.get_metadata("performative")
-            if protocol == REQUEST_PROTOCOL and performative == INFORM_PERFORMATIVE:
-                content = json.loads(msg.body)
-                if "status" in content and content["status"] == INFORM_EMERGENCY_DONE:
-                    await self.clear_emergency()
+            if protocol != REQUEST_PROTOCOL and performative != INFORM_PERFORMATIVE:
+                self.agent.attend_emergency_queue.put_nowait(msg)
+                return
+            content = json.loads(msg.body)
+            if "status" not in content and content["status"] != INFORM_EMERGENCY_DONE:
+                self.agent.attend_emergency_queue.put_nowait(msg)
+                return
 
-                    # Back to route
-                    behav = await self.move_to_point(self.agent.next_point)
-                    self.agent.set("movement_behav", behav)
-                    await self.notify_back_to_route()
-                    self.set_next_state(PoliceState.MOVING_TO.value)
-                    return
+            await self.clear_emergency()
+            behav = await self.move_to_point(self.agent.next_point) # Back to route
+            self.agent.set("movement_behav", behav)
+            await self.notify_back_to_route()
+            self.set_next_state(PoliceState.MOVING_TO.value)
+            return
 
         self.set_next_state(PoliceState.ATTEND_EMGY.value)
         return
@@ -177,6 +192,8 @@ class PoliceBackIntoBase(PoliceStrategyBehaviour):
         self.agent.status = PoliceState.BACK_INTO_BASE.value
         logger.debug("Patrol {} in {} State".format(self.agent.name, PoliceState.BACK_INTO_BASE.value))
         logger.debug("Patrol {} in final state".format(self.agent.name))
+
+        await self.notify_back_in_base()
 
     async def run(self):
         return

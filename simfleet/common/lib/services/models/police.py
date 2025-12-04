@@ -26,7 +26,8 @@ from simfleet.utils.messageconstants import (
     INFORM_BACK_TO_ROUTE,
     INFORM_ARRIVED,
     INFORM_MOVING_TO,
-    ACCEPT_PATROL
+    ACCEPT_PATROL,
+    INFORM_BACK_IN_BASE
 )
 from simfleet.common.mixins.movable import MovingBehaviour
 
@@ -390,6 +391,13 @@ class PoliceStrategyBehaviour(State):
         })
         await self.send(msg)
 
+        self.agent.events_store.emit(
+            event_type="patrol_arrived",
+            details={
+                "emergency": self.agent.emergency_id
+            }
+        )
+
     async def notify_back_to_route(self):
         msg = Message()
         msg.to = self.agent.fleetmanager_id
@@ -397,6 +405,16 @@ class PoliceStrategyBehaviour(State):
         msg.set_metadata("performative", INFORM_PERFORMATIVE)
         msg.body = json.dumps({
             "status": INFORM_BACK_TO_ROUTE
+        })
+        await self.send(msg)
+
+    async def notify_back_in_base(self):
+        msg = Message()
+        msg.to = self.agent.fleetmanager_id
+        msg.set_metadata("protocol", REQUEST_PROTOCOL)
+        msg.set_metadata("performative", INFORM_PERFORMATIVE)
+        msg.body = json.dumps({
+            "status": INFORM_BACK_IN_BASE
         })
         await self.send(msg)
 
