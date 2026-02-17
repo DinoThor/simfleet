@@ -71,6 +71,8 @@ class SimfleetConfig(object):
         #     self.__config["zoom"] = self.__config.get("zoom", 11.75)
         #     self.__config["coords"] = default_location
 
+        self.__config["coords"] = ([39.4697065, -0.3763353], (39.44357646085199, -0.428595378296018, 39.49583653914801, -0.32407522170398195))
+
         #self.__config["coords"] = self.__config.get("coords", [39.47, -0.37])
         #self.__config["zoom"] = self.__config.get("zoom", 12)
 
